@@ -18,6 +18,7 @@ function App() {
       // Handle both response formats: direct array or nested in products property
       const productsData = response.data.products || response.data
       setProducts(productsData)
+      setProducts(response.data.products)
     } catch (error) {
       console.error('Error fetching products:', error)
       setError(`Failed to fetch products: ${error.message}`)
