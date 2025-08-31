@@ -1,3 +1,156 @@
+#!/bin/bash
+
+# fix-catalog-system.sh
+# Complete fix script for AI-Enhanced Catalog Service
+
+echo "🔧 AI-Enhanced Catalog Service - Complete Fix Script"
+echo "====================================================="
+
+# Stop all services first
+echo "📦 Stopping existing services..."
+docker compose down
+
+# Fix 1: Agent Service MongoDB Connection
+echo "🔧 Fixing agent-service MongoDB connection..."
+if [ -f "agent-service/src/app.js" ]; then
+    # Fix MongoDB connection
+    sed -i.bak 's|localhost:27017|mongodb:27017|g' agent-service/src/app.js
+    # Fix model name
+    sed -i.bak "s|'ai/llama3.2:3b'|'ai/llama3.2:latest'|g" agent-service/src/app.js
+    echo "✅ Agent service fixed"
+fi
+
+# Fix 2: Create Backend Service if missing
+echo "🔧 Setting up backend service..."
+if [ ! -d "backend" ]; then
+    mkdir -p backend/src
+    
+    # Create package.json
+    cat > backend/package.json << 'EOF'
+{
+  "name": "catalog-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "pg": "^8.11.3",
+    "mongodb": "^6.3.0",
+    "axios": "^1.6.2"
+  }
+}
+EOF
+
+    # Create Dockerfile
+    cat > backend/Dockerfile << 'EOF'
+FROM node:20-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+EXPOSE 3000
+CMD ["npm", "start"]
+EOF
+
+    # Create server.js
+    cat > backend/src/server.js << 'EOF'
+import express from 'express';
+import cors from 'cors';
+import pg from 'pg';
+import axios from 'axios';
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.use(cors());
+app.use(express.json());
+
+// PostgreSQL connection
+const pgPool = new pg.Pool({
+  host: process.env.POSTGRES_HOST || 'postgres',
+  port: process.env.POSTGRES_PORT || 5432,
+  user: process.env.POSTGRES_USER || 'postgres',
+  password: process.env.POSTGRES_PASSWORD || 'postgres',
+  database: process.env.POSTGRES_DB || 'catalog_db'
+});
+
+// Initialize products table
+pgPool.query(`
+  CREATE TABLE IF NOT EXISTS products (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255),
+    description TEXT,
+    price DECIMAL(10,2),
+    vendor VARCHAR(255),
+    ai_score INTEGER,
+    created_at TIMESTAMP DEFAULT NOW()
+  )
+`).catch(console.error);
+
+// API Routes
+app.get('/health', (req, res) => {
+  res.json({ status: 'healthy' });
+});
+
+app.get('/api/products', async (req, res) => {
+  try {
+    const result = await pgPool.query('SELECT * FROM products ORDER BY created_at DESC LIMIT 20');
+    res.json({ products: result.rows });
+  } catch (error) {
+    console.error('Error fetching products:', error);
+    res.json({ products: [] });
+  }
+});
+
+app.post('/api/products', async (req, res) => {
+  try {
+    const { name, description, price, vendor } = req.body;
+    
+    // Call agent service for AI evaluation
+    let aiScore = 75; // default
+    try {
+      const evaluation = await axios.post(
+        `${process.env.AGENT_SERVICE_URL}/products/evaluate`,
+        { vendor, product: name, description, price }
+      );
+      aiScore = evaluation.data?.evaluation?.score || 75;
+    } catch (err) {
+      console.log('AI evaluation failed, using default score');
+    }
+    
+    const result = await pgPool.query(
+      'INSERT INTO products (name, description, price, vendor, ai_score) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [name, description, price, vendor, aiScore]
+    );
+    res.json({ success: true, product: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`Backend API running on port ${PORT}`);
+});
+EOF
+    echo "✅ Backend service created"
+else
+    echo "✅ Backend directory exists"
+fi
+
+# Fix 3: Update Frontend API Configuration
+echo "🔧 Fixing frontend API configuration..."
+if [ -f "frontend/src/App.jsx" ]; then
+    sed -i.bak 's|http://localhost:[0-9]*|http://localhost:3000|g' frontend/src/App.jsx
+    echo "✅ Frontend configured to use backend on port 3000"
+fi
+
+# Fix 4: Update docker-compose.yml
+echo "🔧 Updating docker-compose.yml..."
+cat > docker-compose.yml << 'EOF'
 services:
   # Backend API Service
   backend:
@@ -263,3 +416,66 @@ volumes:
   pgadmin_data:
   mongodb_data:
   kafka_data:
+EOF
+
+echo "✅ docker-compose.yml updated"
+
+# Clean volumes if requested
+read -p "Do you want to clean all Docker volumes? (y/N): " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    docker volume rm catalog-service-ai-enhanced_kafka_data 2>/dev/null
+    docker volume rm catalog-service-ai-enhanced_postgres_data 2>/dev/null
+    docker volume rm catalog-service-ai-enhanced_mongodb_data 2>/dev/null
+    echo "✅ Volumes cleaned"
+fi
+
+# Build and start services
+echo "🚀 Building and starting all services..."
+docker compose build --no-cache
+docker compose up -d
+
+# Wait for services to start
+echo "⏳ Waiting for services to start..."
+sleep 15
+
+# Test services
+echo "🧪 Testing services..."
+echo "----------------------------------------"
+
+# Test Backend
+if curl -s http://localhost:3000/health | grep -q "healthy"; then
+    echo "✅ Backend API: Running"
+else
+    echo "❌ Backend API: Failed"
+fi
+
+# Test Agent Service
+if curl -s http://localhost:7777/health | grep -q "healthy"; then
+    echo "✅ Agent Service: Running"
+else
+    echo "❌ Agent Service: Failed"
+fi
+
+# Test Model Runner
+if curl -s http://localhost:12434/models | grep -q "llama3.2"; then
+    echo "✅ Model Runner: Llama 3.2 loaded"
+else
+    echo "❌ Model Runner: Not responding"
+fi
+
+# Show all services
+echo ""
+echo "📊 Service Status:"
+docker compose ps
+
+echo ""
+echo "🌐 Web Interfaces:"
+echo "----------------------------------------"
+echo "Frontend:     http://localhost:5173"
+echo "Backend API:  http://localhost:3000"
+echo "Agent Portal: http://localhost:3001"
+echo "Kafka UI:     http://localhost:8080"
+echo "pgAdmin:      http://localhost:5050"
+echo ""
+echo "✨ System is ready! Try submitting a product at http://localhost:3001"
