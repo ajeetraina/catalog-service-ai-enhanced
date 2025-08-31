@@ -16,10 +16,10 @@ AI-powered catalog management system with intelligent agents for product evaluat
 
 The repository includes four specialized AI agents:
 
-- Vendor Intake Agent: Evaluates product submissions with 0-100 scoring
-- Market Research Agent: Performs automated competitor analysis
-- Customer Match Agent: Analyzes customer preferences
-- Catalog Management Agent: Updates and maintains the product catalog
+- **Vendor Intake Agent**: Evaluates product submissions with 0-100 scoring
+- **Market Research Agent**: Performs automated competitor analysis
+- **Customer Match Agent**: Analyzes customer preferences
+- **Catalog Management Agent**: Updates and maintains the product catalog
 
 ## Quick Start
 
