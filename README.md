@@ -69,3 +69,10 @@ curl -X POST http://localhost:3000/api/products \
   -H "Content-Type: application/json" \
   -d '{"name":"Smart Home Hub","description":"Voice control for 100+ devices","price":149.99,"vendor":"HomeTech"}'
 ```
+
+## Verify the newly added products
+
+```
+ curl http://localhost:3000/api/products
+{"products":[{"id":1,"name":"Smart Watch Ultra","description":"Advanced fitness tracker with heart rate, GPS","price":299.99,"vendor":"TechCorp","ai_score":84,"created_at":"2025-08-31T11:51:46.954Z"},{"id":2,"name":"Wireless Earbuds Pro","description":"Noise cancelling, 24hr battery","price":199.99,"vendor":"AudioTech","ai_score":76,"created_at":"2025-08-31T11:51:46.978Z"},{"id":3,"name":"Smart Home Hub","description":"Voice control for 100+ devices","price":149.99,"vendor":"HomeTech","ai_score":77,"created_at":"2025-08-31T11:51:46.991Z"}]}%
+```
