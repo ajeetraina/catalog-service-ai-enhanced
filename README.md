@@ -11,6 +11,16 @@ AI-powered catalog management system with intelligent agents for product evaluat
 - 🎯 **MCP Gateway**: Secure AI tool orchestration
 - 🧠 **Model Runner**: Local AI model execution
 
+
+## AI Agents System:
+
+The repository includes four specialized AI agents:
+
+- Vendor Intake Agent: Evaluates product submissions with 0-100 scoring
+- Market Research Agent: Performs automated competitor analysis
+- Customer Match Agent: Analyzes customer preferences
+- Catalog Management Agent: Updates and maintains the product catalog
+
 ## Quick Start
 
 1. Clone the repository:
