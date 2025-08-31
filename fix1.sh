@@ -1,0 +1,353 @@
+#!/bin/bash
+
+echo "🔧 Fixing Docker Compose issues..."
+echo "================================="
+
+# 1. Fix the docker-compose.yml version issue
+echo "📝 Removing obsolete 'version' attribute from docker-compose.yml..."
+if [ -f docker-compose.yml ]; then
+    # Remove the version line
+    sed -i '' '/^version:/d' docker-compose.yml 2>/dev/null || sed -i '/^version:/d' docker-compose.yml
+    echo "✅ Fixed docker-compose.yml"
+else
+    echo "❌ docker-compose.yml not found"
+fi
+
+# 2. Fix the model-runner container conflict
+echo ""
+echo "🐳 Checking for existing model-runner container..."
+if docker ps -a | grep -q catalog-model-runner; then
+    echo "Found existing catalog-model-runner container"
+    read -p "Do you want to remove the existing container? (y/n): " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        docker stop catalog-model-runner 2>/dev/null
+        docker rm catalog-model-runner 2>/dev/null
+        echo "✅ Removed existing container"
+    else
+        echo "⚠️  Renaming model-runner in docker-compose.yml to catalog-model-runner-v2..."
+        sed -i '' 's/container_name: catalog-model-runner/container_name: catalog-model-runner-v2/g' docker-compose.yml 2>/dev/null || \
+        sed -i 's/container_name: catalog-model-runner/container_name: catalog-model-runner-v2/g' docker-compose.yml
+    fi
+fi
+
+# 3. Fix Kafka health check
+echo ""
+echo "🔧 Fixing Kafka configuration and health check..."
+
+# Create a fixed docker-compose.yml with proper Kafka config
+cat > docker-compose.fixed.yml << 'EOF'
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: catalog-postgres
+    environment:
+      POSTGRES_DB: catalog_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d
+    networks:
+      - catalog-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Kafka (KRaft Mode - Fixed configuration)
+  kafka:
+    image: apache/kafka:latest
+    container_name: catalog-kafka
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      # KRaft settings
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_LISTENERS: 'PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:9092'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:29092,EXTERNAL://localhost:9092'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:9093'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+      # Essential settings
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_LOG_DIRS: '/tmp/kafka-logs'
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      # Cluster ID
+      CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+    volumes:
+      - kafka_data:/tmp/kafka-logs
+    networks:
+      - catalog-network
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:29092 --list || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # LocalStack for AWS Services
+  localstack:
+    image: localstack/localstack:latest
+    container_name: catalog-localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=s3
+      - DEBUG=0
+    volumes:
+      - "${TMPDIR:-/tmp}/localstack:/tmp/localstack"
+      - "./localstack/init:/etc/localstack/init/ready.d"
+    networks:
+      - catalog-network
+
+  # WireMock for External Service Mocking
+  wiremock:
+    image: wiremock/wiremock:latest
+    container_name: catalog-wiremock
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./wiremock:/home/wiremock
+    networks:
+      - catalog-network
+
+  # pgAdmin for PostgreSQL
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: catalog-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@catalog.com
+      PGADMIN_DEFAULT_PASSWORD: postgres
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - catalog-network
+    depends_on:
+      - postgres
+
+  # Kafka UI
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: catalog-kafka-ui
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+    depends_on:
+      - kafka
+    networks:
+      - catalog-network
+
+  # Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: catalog-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:3000
+      - VITE_AGENT_PORTAL_URL=http://localhost:3001
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - catalog-network
+
+  # MCP Gateway
+  mcp-gateway:
+    image: docker/mcp-gateway:latest
+    container_name: catalog-mcp-gateway
+    ports:
+      - "8811:8811"
+    command:
+      - --transport=streaming
+      - --port=8811
+      - --secrets=/run/secrets/mcp_secret
+      - --servers=brave,postgres-mcp,mongodb-mcp
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./secrets/.mcp.env:/run/secrets/mcp_secret:ro
+    networks:
+      - catalog-network
+    environment:
+      DOCKER_API_VERSION: "1.43"
+
+  # MongoDB for Agent Memory
+  mongodb:
+    image: mongo:7.0
+    container_name: catalog-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin
+      MONGO_INITDB_DATABASE: agent_history
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - catalog-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Agent Service
+  agent-service:
+    build:
+      context: ./agent-service
+      dockerfile: Dockerfile
+    container_name: catalog-agent-service
+    ports:
+      - "7777:7777"
+    environment:
+      MCPGATEWAY_URL: http://mcp-gateway:8811
+      MODEL_RUNNER_URL: http://host.docker.internal:12434
+      POSTGRES_URL: postgresql://postgres:postgres@postgres:5432/catalog_db
+      MONGODB_URL: mongodb://admin:admin@mongodb:27017
+      KAFKA_BROKERS: kafka:29092
+    depends_on:
+      - mcp-gateway
+      - postgres
+      - mongodb
+      - kafka
+    volumes:
+      - ./agent-service:/app
+      - /app/node_modules
+    networks:
+      - catalog-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Agent Portal
+  agent-portal:
+    build:
+      context: ./agent-portal
+      dockerfile: Dockerfile
+    container_name: catalog-agent-portal
+    ports:
+      - "3001:3000"
+    environment:
+      REACT_APP_AGENT_SERVICE_URL: http://localhost:7777
+      REACT_APP_API_URL: http://localhost:3000
+    volumes:
+      - ./agent-portal:/app
+      - /app/node_modules
+    networks:
+      - catalog-network
+    depends_on:
+      - agent-service
+
+networks:
+  catalog-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  kafka_data:
+  pgadmin_data:
+  mongodb_data:
+  model_cache:
+EOF
+
+echo "✅ Created fixed docker-compose configuration"
+
+# 4. Apply the fix
+echo ""
+echo "📋 Applying fixes..."
+mv docker-compose.yml docker-compose.backup.yml 2>/dev/null
+mv docker-compose.fixed.yml docker-compose.yml
+
+# 5. Restart Kafka to apply new configuration
+echo ""
+echo "🔄 Restarting Kafka with fixed configuration..."
+docker compose stop kafka
+docker compose rm -f kafka
+docker compose up -d kafka
+
+echo ""
+echo "⏳ Waiting for Kafka to be ready (this may take 30 seconds)..."
+sleep 10
+
+# 6. Test Kafka connection
+echo ""
+echo "🧪 Testing Kafka..."
+for i in {1..5}; do
+    if docker exec catalog-kafka kafka-topics.sh --bootstrap-server localhost:29092 --list &>/dev/null; then
+        echo "✅ Kafka is now responding!"
+        break
+    else
+        echo "⏳ Attempt $i/5: Waiting for Kafka..."
+        sleep 5
+    fi
+done
+
+# 7. Create Kafka topics
+echo ""
+echo "📝 Creating Kafka topics..."
+docker exec catalog-kafka kafka-topics.sh --create --topic product-submissions --bootstrap-server localhost:29092 --partitions 3 --replication-factor 1 2>/dev/null || true
+docker exec catalog-kafka kafka-topics.sh --create --topic product-updates --bootstrap-server localhost:29092 --partitions 3 --replication-factor 1 2>/dev/null || true
+docker exec catalog-kafka kafka-topics.sh --create --topic agent-evaluations --bootstrap-server localhost:29092 --partitions 3 --replication-factor 1 2>/dev/null || true
+echo "✅ Kafka topics created"
+
+# 8. Final health check
+echo ""
+echo "🔍 Final Health Check:"
+echo "====================="
+
+# PostgreSQL
+if docker exec catalog-postgres pg_isready -U postgres &>/dev/null; then
+    echo "✅ PostgreSQL: Healthy"
+else
+    echo "❌ PostgreSQL: Not responding"
+fi
+
+# Kafka
+if docker exec catalog-kafka kafka-topics.sh --bootstrap-server localhost:29092 --list &>/dev/null; then
+    echo "✅ Kafka: Healthy"
+else
+    echo "❌ Kafka: Not responding"
+fi
+
+# MongoDB
+if docker exec catalog-mongodb mongosh --eval 'db.adminCommand("ping")' --quiet &>/dev/null; then
+    echo "✅ MongoDB: Healthy"
+else
+    echo "❌ MongoDB: Not responding"
+fi
+
+# Model Runner (if running externally)
+if curl -s http://localhost:12434/models &>/dev/null; then
+    echo "✅ Model Runner: Healthy (external)"
+else
+    echo "ℹ️  Model Runner: Not detected (may need to be started separately)"
+fi
+
+# MCP Gateway
+if curl -s http://localhost:8811/health &>/dev/null; then
+    echo "✅ MCP Gateway: Healthy"
+else
+    echo "❌ MCP Gateway: Not responding"
+fi
+
+echo ""
+echo "✅ Fixes applied successfully!"
+echo ""
+echo "📊 Service URLs:"
+echo "  • Frontend: http://localhost:5173

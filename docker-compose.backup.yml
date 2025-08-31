@@ -1,4 +1,5 @@
 services:
+  # PostgreSQL Database
   postgres:
     image: postgres:16-alpine
     container_name: catalog-postgres
@@ -7,75 +8,81 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-    - 5432:5432
+      - "5432:5432"
     volumes:
-    - postgres_data:/var/lib/postgresql/data
-    - ./database/init:/docker-entrypoint-initdb.d
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d
     networks:
-    - catalog-network
+      - catalog-network
     healthcheck:
-      test:
-      - CMD-SHELL
-      - pg_isready -U postgres
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # Kafka (KRaft Mode - Fixed configuration)
   kafka:
     image: apache/kafka:latest
     container_name: catalog-kafka
     ports:
-    - 9092:9092
-    - 9093:9093
+      - "9092:9092"
+      - "9093:9093"
     environment:
+      # KRaft settings
       KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:9092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,EXTERNAL://localhost:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_LISTENERS: 'PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:9092'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:29092,EXTERNAL://localhost:9092'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:9093'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+      # Essential settings
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_LOG_DIRS: /tmp/kafka-logs
+      KAFKA_LOG_DIRS: '/tmp/kafka-logs'
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
-      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      # Cluster ID
+      CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
     volumes:
-    - kafka_data:/tmp/kafka-logs
+      - kafka_data:/tmp/kafka-logs
     networks:
-    - catalog-network
+      - catalog-network
     healthcheck:
-      test:
-      - CMD-SHELL
-      - /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:29092
-        || exit 1
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:29092 --list || exit 1"]
       interval: 10s
       timeout: 10s
       retries: 10
-      start_period: 40s
+      start_period: 30s
+
+  # LocalStack for AWS Services
   localstack:
     image: localstack/localstack:latest
     container_name: catalog-localstack
     ports:
-    - 4566:4566
+      - "4566:4566"
     environment:
-    - SERVICES=s3
-    - DEBUG=0
+      - SERVICES=s3
+      - DEBUG=0
     volumes:
-    - ${TMPDIR:-/tmp}/localstack:/tmp/localstack
-    - ./localstack/init:/etc/localstack/init/ready.d
+      - "${TMPDIR:-/tmp}/localstack:/tmp/localstack"
+      - "./localstack/init:/etc/localstack/init/ready.d"
     networks:
-    - catalog-network
+      - catalog-network
+
+  # WireMock for External Service Mocking
   wiremock:
     image: wiremock/wiremock:latest
     container_name: catalog-wiremock
     ports:
-    - 8081:8080
+      - "8081:8080"
     volumes:
-    - ./wiremock:/home/wiremock
+      - ./wiremock:/home/wiremock
     networks:
-    - catalog-network
+      - catalog-network
+
+  # pgAdmin for PostgreSQL
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: catalog-pgadmin
@@ -84,82 +91,92 @@ services:
       PGADMIN_DEFAULT_PASSWORD: postgres
       PGADMIN_CONFIG_SERVER_MODE: 'False'
     ports:
-    - 5050:80
+      - "5050:80"
     volumes:
-    - pgadmin_data:/var/lib/pgadmin
+      - pgadmin_data:/var/lib/pgadmin
     networks:
-    - catalog-network
+      - catalog-network
     depends_on:
-    - postgres
+      - postgres
+
+  # Kafka UI
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: catalog-kafka-ui
     ports:
-    - 8080:8080
+      - "8080:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
     depends_on:
-    - kafka
+      - kafka
     networks:
-    - catalog-network
+      - catalog-network
+
+  # Frontend Service
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: catalog-frontend
     ports:
-    - 5173:5173
+      - "5173:5173"
     environment:
-    - VITE_API_URL=http://localhost:3000
-    - VITE_AGENT_PORTAL_URL=http://localhost:3001
+      - VITE_API_URL=http://localhost:3000
+      - VITE_AGENT_PORTAL_URL=http://localhost:3001
     volumes:
-    - ./frontend:/app
-    - /app/node_modules
+      - ./frontend:/app
+      - /app/node_modules
     networks:
-    - catalog-network
+      - catalog-network
+
+  # MCP Gateway
   mcp-gateway:
     image: docker/mcp-gateway:latest
     container_name: catalog-mcp-gateway
     ports:
-    - 8811:8811
+      - "8811:8811"
     command:
-    - --transport=streaming
-    - --port=8811
-    - --secrets=/run/secrets/mcp_secret
-    - --servers=brave,postgres-mcp,mongodb-mcp
+      - --transport=streaming
+      - --port=8811
+      - --secrets=/run/secrets/mcp_secret
+      - --servers=brave,postgres-mcp,mongodb-mcp
     volumes:
-    - /var/run/docker.sock:/var/run/docker.sock
-    - ./secrets/.mcp.env:/run/secrets/mcp_secret:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./secrets/.mcp.env:/run/secrets/mcp_secret:ro
     networks:
-    - catalog-network
+      - catalog-network
     environment:
-      DOCKER_API_VERSION: '1.43'
+      DOCKER_API_VERSION: "1.43"
+
+  # MongoDB for Agent Memory
   mongodb:
     image: mongo:7.0
     container_name: catalog-mongodb
     ports:
-    - 27017:27017
+      - "27017:27017"
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: admin
       MONGO_INITDB_DATABASE: agent_history
     volumes:
-    - mongodb_data:/data/db
+      - mongodb_data:/data/db
     networks:
-    - catalog-network
+      - catalog-network
     healthcheck:
       test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # Agent Service
   agent-service:
     build:
       context: ./agent-service
       dockerfile: Dockerfile
     container_name: catalog-agent-service
     ports:
-    - 7777:7777
+      - "7777:7777"
     environment:
       MCPGATEWAY_URL: http://mcp-gateway:8811
       MODEL_RUNNER_URL: http://host.docker.internal:12434
@@ -167,40 +184,44 @@ services:
       MONGODB_URL: mongodb://admin:admin@mongodb:27017
       KAFKA_BROKERS: kafka:29092
     depends_on:
-    - mcp-gateway
-    - postgres
-    - mongodb
-    - kafka
+      - mcp-gateway
+      - postgres
+      - mongodb
+      - kafka
     volumes:
-    - ./agent-service:/app
-    - /app/node_modules
+      - ./agent-service:/app
+      - /app/node_modules
     networks:
-    - catalog-network
+      - catalog-network
     extra_hosts:
-    - host.docker.internal:host-gateway
+      - "host.docker.internal:host-gateway"
+
+  # Agent Portal
   agent-portal:
     build:
       context: ./agent-portal
       dockerfile: Dockerfile
     container_name: catalog-agent-portal
     ports:
-    - 3001:3000
+      - "3001:3000"
     environment:
       REACT_APP_AGENT_SERVICE_URL: http://localhost:7777
       REACT_APP_API_URL: http://localhost:3000
     volumes:
-    - ./agent-portal:/app
-    - /app/node_modules
+      - ./agent-portal:/app
+      - /app/node_modules
     networks:
-    - catalog-network
+      - catalog-network
     depends_on:
-    - agent-service
+      - agent-service
+
 networks:
   catalog-network:
     driver: bridge
+
 volumes:
-  postgres_data: null
-  kafka_data: null
-  pgadmin_data: null
-  mongodb_data: null
-  model_cache: null
+  postgres_data:
+  kafka_data:
+  pgadmin_data:
+  mongodb_data:
+  model_cache:
