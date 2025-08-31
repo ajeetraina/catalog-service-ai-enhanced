@@ -66,4 +66,24 @@ The system uses a microservices architecture with:
 3. **Customer Match**: Analyzes preferences
 4. **Catalog Management**: Updates product catalog
 
+## Submit a Product
+
+
+```
+Vendor:NVIDIA
+Product: Jetson Nano Super
+Description: Jetson Nano is a tiny computer for AI application.
+Price: 249.0
+Category: Electronics
+```
+
+<img width="882" height="838" alt="image" src="https://github.com/user-attachments/assets/6f56c98a-1d26-4b5e-aef6-364ae504efaf" />
+
+<img width="853" height="443" alt="image" src="https://github.com/user-attachments/assets/4157c0d1-791d-4f67-8272-bd9918b0bd52" />
+
+
+
+## Kafka UI
+
+<img width="1307" height="928" alt="image" src="https://github.com/user-attachments/assets/593cea88-af9d-45c7-b2f5-1e87aa022400" />
 
