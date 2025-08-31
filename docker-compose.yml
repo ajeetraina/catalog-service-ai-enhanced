@@ -113,7 +113,11 @@ services:
         model_var: MODEL_RUNNER_MODEL
     command:
       - --transport=sse
+<<<<<<< HEAD
       - --servers=fetch,brave
+=======
+      - --servers=fetch,brave,resend,curl,mongodb
+>>>>>>> 6193edd (Added)
       - --verbose
     networks:
       - catalog-network
