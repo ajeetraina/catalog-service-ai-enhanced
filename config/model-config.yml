@@ -1,0 +1,23 @@
+version: '1.0'
+
+model_runner:
+  base_url:
+    from_container: "http://model-runner.docker.internal/"
+    from_compose: "http://model-runner:12434/"
+  tcp_port: 12434
+
+models:
+  llama3.2-3b:
+    namespace: "ai"
+    name: "llama3.2"
+    tag: "3b"
+    full_name: "ai/llama3.2:3b"
+    endpoint: "http://model-runner:12434/engines/v1/chat/completions"
+
+agents:
+  vendor_intake:
+    name: "Vendor Intake Agent"
+    model: "ai/llama3.2:3b"
+    system_prompt: |
+      Evaluate product submissions and score 0-100.
+      Return JSON with score, decision, and reasons.

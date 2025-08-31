@@ -1,0 +1,13 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPattern": "/api/inventory/.*"
+  },
+  "response": {
+    "status": 200,
+    "jsonBody": {
+      "quantity": 100,
+      "status": "in_stock"
+    }
+  }
+}

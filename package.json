@@ -1,0 +1,18 @@
+{
+  "name": "catalog-service-ai-enhanced",
+  "version": "2.0.0",
+  "description": "AI-powered catalog service with intelligent agents",
+  "scripts": {
+    "dev": "cd backend && npm run dev",
+    "start": "cd backend && npm start",
+    "test": "cd backend && npm test",
+    "setup": "make setup"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ajeetraina/catalog-service-ai-enhanced.git"
+  },
+  "keywords": ["catalog", "ai", "docker", "mcp", "agents"],
+  "author": "Ajeet Raina",
+  "license": "MIT"
+}
