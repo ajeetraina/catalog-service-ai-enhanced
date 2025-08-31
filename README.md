@@ -2,6 +2,9 @@
 
 AI-powered catalog management system with intelligent agents for product evaluation, market research, and inventory optimization.
 
+<img width="1007" height="941" alt="image" src="https://github.com/user-attachments/assets/1337bbdf-414c-40d6-9350-4a2e4f13dc34" />
+
+
 ## Features
 
 - 🤖 **AI Agents**: Intelligent evaluation and decision-making
@@ -63,29 +66,4 @@ The system uses a microservices architecture with:
 3. **Customer Match**: Analyzes preferences
 4. **Catalog Management**: Updates product catalog
 
-## Add a Product
-
-```
-# Add a few more products
-curl -X POST http://localhost:3000/api/products \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Smart Watch Ultra","description":"Advanced fitness tracker with heart rate, GPS","price":299.99,"vendor":"TechCorp"}'
-
-curl -X POST http://localhost:3000/api/products \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Wireless Earbuds Pro","description":"Noise cancelling, 24hr battery","price":199.99,"vendor":"AudioTech"}'
-
-curl -X POST http://localhost:3000/api/products \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Smart Home Hub","description":"Voice control for 100+ devices","price":149.99,"vendor":"HomeTech"}'
-```
-
-## Verify the newly added products
-
-```
- curl http://localhost:3000/api/products
-{"products":[{"id":1,"name":"Smart Watch Ultra","description":"Advanced fitness tracker with heart rate, GPS","price":299.99,"vendor":"TechCorp","ai_score":84,"created_at":"2025-08-31T11:51:46.954Z"},{"id":2,"name":"Wireless Earbuds Pro","description":"Noise cancelling, 24hr battery","price":199.99,"vendor":"AudioTech","ai_score":76,"created_at":"2025-08-31T11:51:46.978Z"},{"id":3,"name":"Smart Home Hub","description":"Voice control for 100+ devices","price":149.99,"vendor":"HomeTech","ai_score":77,"created_at":"2025-08-31T11:51:46.991Z"}]}%
-```
-
-<img width="546" height="494" alt="image" src="https://github.com/user-attachments/assets/5d07cc23-24f9-42e3-837d-4c8b7a038257" />
 
