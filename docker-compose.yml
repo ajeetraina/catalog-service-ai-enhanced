@@ -114,7 +114,11 @@ services:
     command:
       - --transport=sse
 <<<<<<< HEAD
+<<<<<<< HEAD
       - --servers=fetch,brave
+=======
+      - --servers=fetch,brave,resend,curl,mongodb
+>>>>>>> 6193edd (Added)
 =======
       - --servers=fetch,brave,resend,curl,mongodb
 >>>>>>> 6193edd (Added)
