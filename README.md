@@ -53,19 +53,19 @@ The system uses a microservices architecture with:
 3. **Customer Match**: Analyzes preferences
 4. **Catalog Management**: Updates product catalog
 
-## Development
+## Add a Product
 
-```bash
-# Install dependencies
-npm install
-
-# Run backend
-npm run dev
-
-# Run tests
-npm test
 ```
+# Add a few more products
+curl -X POST http://localhost:3000/api/products \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Smart Watch Ultra","description":"Advanced fitness tracker with heart rate, GPS","price":299.99,"vendor":"TechCorp"}'
 
-## License
+curl -X POST http://localhost:3000/api/products \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Wireless Earbuds Pro","description":"Noise cancelling, 24hr battery","price":199.99,"vendor":"AudioTech"}'
 
-MIT
+curl -X POST http://localhost:3000/api/products \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Smart Home Hub","description":"Voice control for 100+ devices","price":149.99,"vendor":"HomeTech"}'
+```
