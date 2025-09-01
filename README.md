@@ -7,6 +7,20 @@ AI-powered catalog management system with intelligent agents for product evaluat
 This repo helps you learn how Agentic AI can shorten the process of creating and managing Product catalog.
 
 
+## Tech Stack
+
+- Frontend: React/Next.js (:5173)
+- Agent Portal: Custom UI (:3001)
+- AI Layer: Agent Service (:7777) + LLM (ai/llama3.2:latest)
+- Security: MCP Gateway (:8811) + Interceptors (:8080, :8081)
+- Backend: Node.js API (:3000)
+- Messaging: Apache Kafka (:9092)
+- Databases: PostgreSQL (:5432), MongoDB (:27017)
+- Storage: AWS S3 (Object Storage)
+- Monitoring: Prometheus (:9090), Grafana (:3002)
+- Testing: WireMock (:8083), pgAdmin (:5050)
+
+
 ## Features
 
 
@@ -43,7 +57,7 @@ cp .env.example .env
 
 3. Start services:
 ```bash
-docker compose up -d
+docker compose -f docker-compose.interceptors.yaml up -d
 ```
 
 4. Access applications:
