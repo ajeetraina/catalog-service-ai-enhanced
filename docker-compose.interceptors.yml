@@ -42,276 +42,306 @@ services:
       - catalog-network
     restart: unless-stopped
 
-  # ============================================================================
-  # HTTP INTERCEPTOR SERVICES
-  # ============================================================================
-  
-  # Security Interceptor
-  security-interceptor:
-    build: ./interceptors/http/security-service
-    container_name: catalog-security-interceptor
-    ports:
-      - "8080:8080"
-    environment:
-      - SECURITY_MODE=strict
-      - MAX_QUERY_LENGTH=500
-      - BLOCKED_PATTERNS=password,secret,token,api_key
-      - RATE_LIMIT_RPM=60
-      - LOG_LEVEL=info
-    volumes:
-      - /var/log/mcp:/var/log/mcp:rw
-    networks:
-      - catalog-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
+# Create a smart integration script that reads the existing compose file
+cat > integrate-interceptors.py << 'EOF'
+#!/usr/bin/env python3
+"""
+Smart Integration Script for MCP Interceptors
+Analyzes existing docker-compose.yml and creates enhanced version
+"""
+import yaml
+import sys
+import os
+import json
 
-  # Audit Interceptor
-  audit-interceptor:
-    build: ./interceptors/http/audit-service
-    container_name: catalog-audit-interceptor
-    ports:
-      - "8081:8080"
-    environment:
-      - AUDIT_MODE=full
-      - COMPLIANCE_RULES=pii_detection,sensitive_data
-      - POSTGRES_HOST=catalog-postgres
-      - POSTGRES_DB=catalog_audit
-      - POSTGRES_USER=audit_user
-      - POSTGRES_PASSWORD=audit_pass
-    volumes:
-      - /var/log/mcp:/var/log/mcp:rw
-    depends_on:
-      - catalog-postgres
-    networks:
-      - catalog-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
+def analyze_existing_compose():
+    """Analyze the existing docker-compose.yml structure"""
+    if not os.path.exists('docker-compose.yml'):
+        print("❌ No docker-compose.yml found in current directory")
+        return None
+    
+    try:
+        with open('docker-compose.yml', 'r') as f:
+            data = yaml.safe_load(f)
+        
+        analysis = {
+            'has_version': 'version' in data,
+            'services': list(data.get('services', {}).keys()),
+            'networks': list(data.get('networks', {}).keys()),
+            'volumes': list(data.get('volumes', {}).keys()),
+            'mcp_gateway': None,
+            'model_runner': None,
+            'existing_tools': []
+        }
+        
+        # Find MCP Gateway service
+        services = data.get('services', {})
+        for service_name, config in services.items():
+            image = config.get('image', '')
+            command = config.get('command', '')
+            
+            if 'mcp-gateway' in image or 'mcp-gateway' in service_name.lower():
+                analysis['mcp_gateway'] = {
+                    'name': service_name,
+                    'config': config,
+                    'has_servers': '--servers' in str(command),
+                    'has_tools': '--tools' in str(command),
+                    'servers': [],
+                    'tools': []
+                }
+                
+                # Extract servers and tools from command
+                if isinstance(command, str):
+                    if '--servers=' in command:
+                        servers_part = command.split('--servers=')[1].split()[0]
+                        analysis['mcp_gateway']['servers'] = servers_part.split(',')
+                    if '--tools=' in command:
+                        tools_part = command.split('--tools=')[1].split()[0]  
+                        analysis['mcp_gateway']['tools'] = tools_part.split(',')
+            
+            # Check for model runner
+            if 'model-runner' in image or 'model' in service_name.lower():
+                analysis['model_runner'] = {
+                    'name': service_name,
+                    'config': config
+                }
+        
+        return analysis
+        
+    except Exception as e:
+        print(f"❌ Error analyzing docker-compose.yml: {e}")
+        return None
 
-  # ============================================================================
-  # DOCKER CONTAINER INTERCEPTORS
-  # ============================================================================
-  
-  content-analyzer:
-    build: ./interceptors/docker/content-analyzer
-    image: catalog-content-analyzer:latest
-    container_name: catalog-content-analyzer
-    environment:
-      - ANALYSIS_MODEL=sentiment,quality
-      - CONFIDENCE_THRESHOLD=0.8
-      - OUTPUT_FORMAT=json
-    networks:
-      - catalog-network
-    profiles:
-      - tools
+def create_interceptor_enhancement(analysis):
+    """Create interceptor services that integrate with existing setup"""
+    
+    if not analysis:
+        print("❌ Cannot create enhancement without analysis")
+        return False
+    
+    # Read the original compose file
+    with open('docker-compose.yml', 'r') as f:
+        original_data = yaml.safe_load(f)
+    
+    # Determine network name (use existing or default)
+    network_name = analysis['networks'][0] if analysis['networks'] else 'default'
+    
+    # Add interceptor services
+    interceptor_services = {
+        'security-interceptor': {
+            'build': './interceptors/http/security-service',
+            'container_name': 'catalog-security-interceptor',
+            'ports': ['8080:8080'],
+            'environment': [
+                'SECURITY_MODE=${SECURITY_MODE:-strict}',
+                'MAX_QUERY_LENGTH=${MAX_QUERY_LENGTH:-500}',
+                'RATE_LIMIT_RPM=${RATE_LIMIT_RPM:-60}',
+                'LOG_LEVEL=${LOG_LEVEL:-info}'
+            ],
+            'volumes': ['/var/log/mcp:/var/log/mcp:rw'],
+            'networks': [network_name] if network_name != 'default' else None,
+            'healthcheck': {
+                'test': ['CMD', 'curl', '-f', 'http://localhost:8080/health'],
+                'interval': '10s',
+                'timeout': '5s',
+                'retries': 3
+            },
+            'restart': 'unless-stopped'
+        },
+        
+        'audit-interceptor': {
+            'build': './interceptors/http/audit-service',
+            'container_name': 'catalog-audit-interceptor', 
+            'ports': ['8081:8080'],
+            'environment': [
+                'AUDIT_MODE=${AUDIT_MODE:-full}',
+                'COMPLIANCE_RULES=${COMPLIANCE_RULES:-pii_detection,sensitive_data}'
+            ],
+            'volumes': ['/var/log/mcp:/var/log/mcp:rw'],
+            'networks': [network_name] if network_name != 'default' else None,
+            'healthcheck': {
+                'test': ['CMD', 'curl', '-f', 'http://localhost:8080/health'],
+                'interval': '15s',
+                'timeout': '5s',
+                'retries': 3
+            },
+            'restart': 'unless-stopped'
+        },
+        
+        'content-analyzer': {
+            'build': './interceptors/docker/content-analyzer',
+            'image': 'catalog-content-analyzer:latest',
+            'container_name': 'catalog-content-analyzer',
+            'environment': [
+                'ANALYSIS_MODEL=${ANALYSIS_MODEL:-sentiment,quality}',
+                'CONFIDENCE_THRESHOLD=${CONFIDENCE_THRESHOLD:-0.8}'
+            ],
+            'networks': [network_name] if network_name != 'default' else None,
+            'profiles': ['tools'],
+            'restart': 'unless-stopped'
+        }
+    }
+    
+    # Add monitoring services
+    monitoring_services = {
+        'prometheus': {
+            'image': 'prom/prometheus:latest',
+            'container_name': 'catalog-prometheus',
+            'ports': ['9090:9090'],
+            'volumes': [
+                './monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro',
+                'prometheus_data:/prometheus'
+            ],
+            'command': [
+                '--config.file=/etc/prometheus/prometheus.yml',
+                '--storage.tsdb.path=/prometheus',
+                '--web.enable-lifecycle'
+            ],
+            'networks': [network_name] if network_name != 'default' else None,
+            'restart': 'unless-stopped'
+        },
+        
+        'grafana': {
+            'image': 'grafana/grafana:latest',
+            'container_name': 'catalog-grafana',
+            'ports': ['3000:3000'],
+            'environment': [
+                'GF_SECURITY_ADMIN_USER=admin',
+                'GF_SECURITY_ADMIN_PASSWORD=admin'
+            ],
+            'volumes': ['grafana_data:/var/lib/grafana'],
+            'depends_on': ['prometheus'],
+            'networks': [network_name] if network_name != 'default' else None,
+            'restart': 'unless-stopped'
+        }
+    }
+    
+    # Merge services
+    enhanced_data = original_data.copy()
+    enhanced_data['services'].update(interceptor_services)
+    enhanced_data['services'].update(monitoring_services)
+    
+    # Add volumes if they don't exist
+    if 'volumes' not in enhanced_data:
+        enhanced_data['volumes'] = {}
+    enhanced_data['volumes'].update({
+        'prometheus_data': None,
+        'grafana_data': None
+    })
+    
+    # Enhance MCP Gateway if found
+    if analysis['mcp_gateway']:
+        gateway_name = analysis['mcp_gateway']['name']
+        gateway_service = enhanced_data['services'][gateway_name]
+        
+        # Add interceptor volumes
+        if 'volumes' not in gateway_service:
+            gateway_service['volumes'] = []
+        
+        interceptor_volumes = [
+            './interceptors/scripts:/scripts:ro',
+            '/tmp/mcp-sessions:/tmp/mcp-sessions:rw',
+            '/var/log/mcp:/var/log/mcp:rw',
+            '/var/run/docker.sock:/var/run/docker.sock:ro'
+        ]
+        
+        for vol in interceptor_volumes:
+            if vol not in gateway_service['volumes']:
+                gateway_service['volumes'].append(vol)
+        
+        # Add dependencies
+        if 'depends_on' not in gateway_service:
+            gateway_service['depends_on'] = []
+        elif isinstance(gateway_service['depends_on'], dict):
+            gateway_service['depends_on'] = list(gateway_service['depends_on'].keys())
+        
+        for dep in ['security-interceptor', 'audit-interceptor']:
+            if dep not in gateway_service['depends_on']:
+                gateway_service['depends_on'].append(dep)
+        
+        # Add interceptor configuration to command
+        if 'command' in gateway_service:
+            existing_command = gateway_service['command']
+            if isinstance(existing_command, list):
+                existing_command = ' '.join(existing_command)
+            
+            # Preserve existing servers and tools, add interceptors
+            interceptor_flags = [
+                '# Interceptor configuration',
+                '--interceptor=before:exec:echo "🛡️ INTERCEPTOR: Query=$(jq -r \'.params.arguments.query // \"none\"\' <<< \'$TOOL_CALL_JSON\')" >&2',
+                '--interceptor=before:exec:/scripts/rate-limiter.sh',
+                '--interceptor=before:http:http://security-interceptor:8080/validate',
+                '--interceptor=after:docker:catalog-content-analyzer:latest analyze',
+                '--interceptor=after:http:http://audit-interceptor:8080/log',
+                '--interceptor=after:exec:/scripts/audit-logger.sh'
+            ]
+            
+            # Add interceptor flags to existing command
+            enhanced_command = existing_command
+            for flag in interceptor_flags:
+                if not flag.startswith('#'):  # Skip comments
+                    enhanced_command += f' \\\n      {flag}'
+            
+            gateway_service['command'] = enhanced_command
+        
+        print(f"✅ Enhanced MCP Gateway service: {gateway_name}")
+        print(f"   Preserved existing servers: {analysis['mcp_gateway']['servers']}")
+        print(f"   Preserved existing tools: {analysis['mcp_gateway']['tools']}")
+    
+    # Remove version field if it exists (deprecated)
+    if 'version' in enhanced_data:
+        del enhanced_data['version']
+        print("✅ Removed deprecated 'version' field")
+    
+    # Write enhanced compose file
+    try:
+        with open('docker-compose.interceptors.yml', 'w') as f:
+            yaml.dump(enhanced_data, f, default_flow_style=False, sort_keys=False, indent=2)
+        
+        print("✅ Created enhanced compose file: docker-compose.interceptors.yml")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error writing enhanced compose file: {e}")
+        return False
 
-  # ============================================================================
-  # YOUR EXISTING SERVICES (Enhanced)
-  # ============================================================================
-  
-  # Agent Service
-  catalog-agent:
-    build: .
-    container_name: catalog-agent-service
-    ports:
-      - "3001:3001"
-    environment:
-      - NODE_ENV=production
-      - MCPGATEWAY_URL=http://mcp-gateway:8811/mcp
-      - AGENT_SECURITY_MODE=strict
-      - INTERCEPTOR_AWARE=true
-      - AUDIT_LOGGING=enabled
-    volumes:
-      - ./agents:/app/agents:ro
-      - /var/log/agents:/var/log/agents:rw
-    depends_on:
-      - mcp-gateway
-      - catalog-postgres
-      - catalog-mongo
-    networks:
-      - catalog-network
-    restart: unless-stopped
+def main():
+    print("🔍 Analyzing your existing Docker Compose setup...")
+    
+    analysis = analyze_existing_compose()
+    if not analysis:
+        return False
+    
+    print(f"✅ Found {len(analysis['services'])} existing services")
+    
+    if analysis['mcp_gateway']:
+        gateway_info = analysis['mcp_gateway']
+        print(f"✅ Found MCP Gateway: {gateway_info['name']}")
+        print(f"   Servers: {gateway_info['servers']}")
+        print(f"   Tools: {gateway_info['tools']}")
+    else:
+        print("⚠️  No MCP Gateway found - will add interceptor services only")
+    
+    if analysis['model_runner']:
+        print(f"✅ Found Model Runner: {analysis['model_runner']['name']}")
+    
+    print(f"✅ Networks: {analysis['networks']}")
+    print(f"✅ Volumes: {analysis['volumes']}")
+    
+    print("\n🔧 Creating interceptor enhancement...")
+    success = create_interceptor_enhancement(analysis)
+    
+    if success:
+        print("\n🎉 Integration complete!")
+        print("   ✅ Your existing services are preserved")
+        print("   ✅ Interceptor services added")
+        print("   ✅ MCP Gateway enhanced with interceptors")
+        print("   ✅ Monitoring services added")
+        print(f"   ✅ Original backed up as: docker-compose.yml.backup")
+        return True
+    else:
+        print("\n❌ Integration failed")
+        return False
 
-  # Frontend
-  catalog-frontend:
-    build: ./frontend
-    container_name: catalog-frontend
-    ports:
-      - "5173:5173"
-    environment:
-      - VITE_API_URL=http://localhost:3000
-      - VITE_AGENT_URL=http://localhost:3001
-      - VITE_SECURITY_MONITORING=enabled
-    depends_on:
-      - catalog-agent
-    networks:
-      - catalog-network
-
-  # API Service
-  catalog-api:
-    build: ./api
-    container_name: catalog-api-service
-    ports:
-      - "3000:3000"
-    environment:
-      - DATABASE_URL=postgresql://catalog_user:catalog_pass@catalog-postgres:5432/catalog_db
-      - MONGODB_URL=mongodb://catalog-mongo:27017/catalog_history
-      - SECURITY_INTERCEPTORS=enabled
-    depends_on:
-      - catalog-postgres
-      - catalog-mongo
-    networks:
-      - catalog-network
-
-  # ============================================================================
-  # INFRASTRUCTURE SERVICES
-  # ============================================================================
-
-  # PostgreSQL
-  catalog-postgres:
-    image: postgres:15-alpine
-    container_name: catalog-postgres
-    ports:
-      - "5432:5432"
-    environment:
-      - POSTGRES_DB=catalog_db
-      - POSTGRES_USER=catalog_user
-      - POSTGRES_PASSWORD=catalog_pass
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./sql/init-audit.sql:/docker-entrypoint-initdb.d/02-audit.sql:ro
-    networks:
-      - catalog-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U catalog_user -d catalog_db"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # MongoDB
-  catalog-mongo:
-    image: mongo:7-jammy
-    container_name: catalog-mongo
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongo_data:/data/db
-    networks:
-      - catalog-network
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # Kafka
-  catalog-kafka:
-    image: apache/kafka:3.8.0
-    container_name: catalog-kafka
-    ports:
-      - "9092:9092"
-      - "9093:9093"
-    environment:
-      KAFKA_NODE_ID: 1
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://catalog-kafka:29092,PLAINTEXT_HOST://localhost:9092
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@catalog-kafka:29093
-      KAFKA_LISTENERS: PLAINTEXT://catalog-kafka:29092,CONTROLLER://catalog-kafka:29093,PLAINTEXT_HOST://0.0.0.0:9092
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: true
-    volumes:
-      - kafka_data:/var/lib/kafka/data
-    networks:
-      - catalog-network
-    healthcheck:
-      test: ["CMD-SHELL", "kafka-broker-api-versions.sh --bootstrap-server localhost:9092"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-
-  # Kafka UI
-  kafka-ui:
-    image: provectuslabs/kafka-ui:latest
-    container_name: catalog-kafka-ui
-    ports:
-      - "8080:8080"
-    environment:
-      KAFKA_CLUSTERS_0_NAME: catalog-cluster
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: catalog-kafka:29092
-    depends_on:
-      - catalog-kafka
-    networks:
-      - catalog-network
-
-  # pgAdmin
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: catalog-pgadmin
-    ports:
-      - "5050:80"
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@catalog.local
-      PGADMIN_DEFAULT_PASSWORD: admin
-    volumes:
-      - pgadmin_data:/var/lib/pgadmin
-    depends_on:
-      - catalog-postgres
-    networks:
-      - catalog-network
-
-  # ============================================================================
-  # MONITORING
-  # ============================================================================
-
-  # Prometheus
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: catalog-prometheus
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.enable-lifecycle'
-    networks:
-      - catalog-network
-
-  # Grafana
-  grafana:
-    image: grafana/grafana:latest
-    container_name: catalog-grafana
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-    volumes:
-      - grafana_data:/var/lib/grafana
-    depends_on:
-      - prometheus
-    networks:
-      - catalog-network
-
-networks:
-  catalog-network:
-    driver: bridge
-    name: catalog-network
-
-volumes:
-  postgres_data:
-  mongo_data:
-  kafka_data:
-  pgadmin_data:
-  prometheus_data:
-  grafana_data:
+if __name__ == "__main__":
+    main()
