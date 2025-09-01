@@ -41,6 +41,13 @@ The repository includes four specialized AI agents:
 - **Customer Match Agent**: Analyzes customer preferences
 - **Catalog Management Agent**: Updates and maintains the product catalog
 
+## 🛡️ Security Integration Highlights:
+
+- BEFORE Interceptors: Security validation, rate limiting, threat detection
+- MCP Gateway: Tool orchestration with SSE transport
+- AFTER Interceptors: PII detection, audit logging, compliance scoring
+- Enterprise Protection: SQL injection blocking, risk assessment
+
 ## Quick Start
 
 1. Clone the repository:
