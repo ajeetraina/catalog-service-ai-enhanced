@@ -5,12 +5,12 @@ AI-powered catalog management system with intelligent agents for product evaluat
 
 ## Features
 
-- 🤖 **AI Agents**: Intelligent evaluation and decision-making
-- 🔍 **Market Research**: Automated competitor analysis
-- 📊 **Smart Analytics**: Customer preference matching
-- 🚀 **Modern Stack**: Kafka (KRaft), PostgreSQL, MongoDB
-- 🎯 **MCP Gateway**: Secure AI tool orchestration
-- 🧠 **Model Runner**: Local AI model execution
+-  **AI Agents**: Intelligent evaluation and decision-making
+-  **Market Research**: Automated competitor analysis
+-  **Smart Analytics**: Customer preference matching
+-  **Modern Stack**: Kafka (KRaft), PostgreSQL, MongoDB
+-  **MCP Gateway**: Secure AI tool orchestration
+-  **Model Runner**: Local AI model execution
 
 
 ## AI Agents System:
