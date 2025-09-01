@@ -48,6 +48,13 @@ The repository includes four specialized AI agents:
 - AFTER Interceptors: PII detection, audit logging, compliance scoring
 - Enterprise Protection: SQL injection blocking, risk assessment
 
+## 📈 Monitoring & Compliance:
+
+- Real-time Metrics: Prometheus collecting security and performance data
+- Visual Dashboards: Grafana for operational visibility
+- Audit Trails: Complete compliance logging for GDPR/PCI
+- Health Monitoring: All services with health endpoints
+
 ## Quick Start
 
 1. Clone the repository:
