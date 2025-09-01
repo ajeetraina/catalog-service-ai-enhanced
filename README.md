@@ -81,6 +81,45 @@ docker compose -f docker-compose.interceptors.yaml up -d
 - pgAdmin: http://localhost:5050
 - Kafka UI: http://localhost:8080
 
+## Testing the interceptor
+
+
+### 🚨 SQL Injection Test:
+
+```
+Vendor: Evil Corp
+Product: Malicious Product
+Description: Contact us for product '; DROP TABLE products; -- with special pricing
+Price: 99.99
+Category: Hacking
+```
+
+<img width="870" height="756" alt="image" src="https://github.com/user-attachments/assets/ec065466-5c95-4b99-a07b-7c39043f4309" />
+
+### 🔐 PII Detection Test:
+
+```
+Vendor: John Doe
+Product: Personal Device
+Description: Contact john.doe@email.com, phone: 555-123-4567, SSN: 123-45-6789, credit card: 4532-1234-5678-9012
+Price: 299.99
+Category: Personal
+```
+
+<img width="859" height="824" alt="image" src="https://github.com/user-attachments/assets/cc7358d2-2a1d-4e62-8448-a182653f6dad" />
+
+### 🔑 Blocked Patterns Test:
+
+```
+Vendor: Secret Corp
+Product: API Product
+Description: This product requires password=admin123, secret_key=topsecret, and api_key=sk-12345 for access
+Price: 199.99
+Category: Security
+```
+<img width="916" height="822" alt="image" src="https://github.com/user-attachments/assets/6c89504f-78f7-4d17-be9d-08f6ba5fd901" />
+
+
 ## Architecture
 
 The system uses a microservices architecture with:
