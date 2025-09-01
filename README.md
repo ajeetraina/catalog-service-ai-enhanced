@@ -6,6 +6,7 @@ This repo helps you learn how Agentic AI can shorten the process of creating and
 
 ## Features
 
+
 -  **AI Agents**: Intelligent evaluation and decision-making
 -  **Market Research**: Automated competitor analysis
 -  **Smart Analytics**: Customer preference matching
