@@ -1,6 +1,7 @@
 # AI-Powered Catalog Management System
 
-AI-powered catalog management system with intelligent agents for product evaluation, market research, and inventory optimization.
+AI-powered catalog management system with intelligent agents for product evaluation, market research, and inventory optimization. 
+This repo helps you learn how Agentic AI can shorten the process of creating and managing Product catalog.
 
 
 ## Features
