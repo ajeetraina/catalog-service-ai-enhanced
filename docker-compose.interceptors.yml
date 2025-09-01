@@ -1,0 +1,317 @@
+# Docker Compose with MCP Interceptors for Catalog Service AI Enhanced
+version: '3.8'
+
+services:
+  # ============================================================================
+  # MCP GATEWAY WITH INTERCEPTORS
+  # ============================================================================
+  mcp-gateway:
+    image: docker/mcp-gateway:latest
+    container_name: catalog-mcp-gateway
+    ports:
+      - "8811:8811"
+    environment:
+      - RUST_LOG=info
+      - MCP_GATEWAY_PORT=8811
+      - MCP_GATEWAY_HOST=0.0.0.0
+      - SECURITY_LEVEL=strict
+      - AUDIT_ENABLED=true
+    command: >
+      --transport=streaming
+      --port=8811
+      --servers=github,brave,wikipedia
+      
+      # BEFORE INTERCEPTORS (Security First)
+      --interceptor=before:exec:echo "🛡️  SECURITY CHECK - Query: $$(jq -r '.params.arguments.query // "none"' <<< '$$TOOL_CALL_JSON') - User: $$(jq -r '.meta.sessionId // "anonymous"' <<< '$$TOOL_CALL_JSON')" >&2
+      --interceptor=before:exec:/scripts/rate-limiter.sh
+      --interceptor=before:http:http://security-interceptor:8080/validate
+      
+      # AFTER INTERCEPTORS (Data Processing)
+      --interceptor=after:docker:catalog-content-analyzer:latest analyze
+      --interceptor=after:http:http://audit-interceptor:8080/log
+      --interceptor=after:exec:/scripts/audit-logger.sh
+    volumes:
+      - ./interceptors/scripts:/scripts:ro
+      - /tmp/mcp-sessions:/tmp/mcp-sessions:rw
+      - /var/log/mcp:/var/log/mcp:rw
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - security-interceptor
+      - audit-interceptor
+    networks:
+      - catalog-network
+    restart: unless-stopped
+
+  # ============================================================================
+  # HTTP INTERCEPTOR SERVICES
+  # ============================================================================
+  
+  # Security Interceptor
+  security-interceptor:
+    build: ./interceptors/http/security-service
+    container_name: catalog-security-interceptor
+    ports:
+      - "8080:8080"
+    environment:
+      - SECURITY_MODE=strict
+      - MAX_QUERY_LENGTH=500
+      - BLOCKED_PATTERNS=password,secret,token,api_key
+      - RATE_LIMIT_RPM=60
+      - LOG_LEVEL=info
+    volumes:
+      - /var/log/mcp:/var/log/mcp:rw
+    networks:
+      - catalog-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Audit Interceptor
+  audit-interceptor:
+    build: ./interceptors/http/audit-service
+    container_name: catalog-audit-interceptor
+    ports:
+      - "8081:8080"
+    environment:
+      - AUDIT_MODE=full
+      - COMPLIANCE_RULES=pii_detection,sensitive_data
+      - POSTGRES_HOST=catalog-postgres
+      - POSTGRES_DB=catalog_audit
+      - POSTGRES_USER=audit_user
+      - POSTGRES_PASSWORD=audit_pass
+    volumes:
+      - /var/log/mcp:/var/log/mcp:rw
+    depends_on:
+      - catalog-postgres
+    networks:
+      - catalog-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ============================================================================
+  # DOCKER CONTAINER INTERCEPTORS
+  # ============================================================================
+  
+  content-analyzer:
+    build: ./interceptors/docker/content-analyzer
+    image: catalog-content-analyzer:latest
+    container_name: catalog-content-analyzer
+    environment:
+      - ANALYSIS_MODEL=sentiment,quality
+      - CONFIDENCE_THRESHOLD=0.8
+      - OUTPUT_FORMAT=json
+    networks:
+      - catalog-network
+    profiles:
+      - tools
+
+  # ============================================================================
+  # YOUR EXISTING SERVICES (Enhanced)
+  # ============================================================================
+  
+  # Agent Service
+  catalog-agent:
+    build: .
+    container_name: catalog-agent-service
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - MCPGATEWAY_URL=http://mcp-gateway:8811/mcp
+      - AGENT_SECURITY_MODE=strict
+      - INTERCEPTOR_AWARE=true
+      - AUDIT_LOGGING=enabled
+    volumes:
+      - ./agents:/app/agents:ro
+      - /var/log/agents:/var/log/agents:rw
+    depends_on:
+      - mcp-gateway
+      - catalog-postgres
+      - catalog-mongo
+    networks:
+      - catalog-network
+    restart: unless-stopped
+
+  # Frontend
+  catalog-frontend:
+    build: ./frontend
+    container_name: catalog-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:3000
+      - VITE_AGENT_URL=http://localhost:3001
+      - VITE_SECURITY_MONITORING=enabled
+    depends_on:
+      - catalog-agent
+    networks:
+      - catalog-network
+
+  # API Service
+  catalog-api:
+    build: ./api
+    container_name: catalog-api-service
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://catalog_user:catalog_pass@catalog-postgres:5432/catalog_db
+      - MONGODB_URL=mongodb://catalog-mongo:27017/catalog_history
+      - SECURITY_INTERCEPTORS=enabled
+    depends_on:
+      - catalog-postgres
+      - catalog-mongo
+    networks:
+      - catalog-network
+
+  # ============================================================================
+  # INFRASTRUCTURE SERVICES
+  # ============================================================================
+
+  # PostgreSQL
+  catalog-postgres:
+    image: postgres:15-alpine
+    container_name: catalog-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=catalog_db
+      - POSTGRES_USER=catalog_user
+      - POSTGRES_PASSWORD=catalog_pass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init-audit.sql:/docker-entrypoint-initdb.d/02-audit.sql:ro
+    networks:
+      - catalog-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U catalog_user -d catalog_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MongoDB
+  catalog-mongo:
+    image: mongo:7-jammy
+    container_name: catalog-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - catalog-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Kafka
+  catalog-kafka:
+    image: apache/kafka:3.8.0
+    container_name: catalog-kafka
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://catalog-kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@catalog-kafka:29093
+      KAFKA_LISTENERS: PLAINTEXT://catalog-kafka:29092,CONTROLLER://catalog-kafka:29093,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: true
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - catalog-network
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions.sh --bootstrap-server localhost:9092"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Kafka UI
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: catalog-kafka-ui
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: catalog-cluster
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: catalog-kafka:29092
+    depends_on:
+      - catalog-kafka
+    networks:
+      - catalog-network
+
+  # pgAdmin
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: catalog-pgadmin
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@catalog.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - catalog-postgres
+    networks:
+      - catalog-network
+
+  # ============================================================================
+  # MONITORING
+  # ============================================================================
+
+  # Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: catalog-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    networks:
+      - catalog-network
+
+  # Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: catalog-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - catalog-network
+
+networks:
+  catalog-network:
+    driver: bridge
+    name: catalog-network
+
+volumes:
+  postgres_data:
+  mongo_data:
+  kafka_data:
+  pgadmin_data:
+  prometheus_data:
+  grafana_data:

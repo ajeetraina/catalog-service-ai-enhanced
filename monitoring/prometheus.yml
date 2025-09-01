@@ -1,0 +1,21 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'mcp-gateway'
+    static_configs:
+      - targets: ['mcp-gateway:9090']
+        
+  - job_name: 'security-interceptor'
+    static_configs:
+      - targets: ['security-interceptor:8080']
+    metrics_path: /metrics
+    
+  - job_name: 'audit-interceptor'
+    static_configs:
+      - targets: ['audit-interceptor:8081']
+    metrics_path: /metrics
+    
+  - job_name: 'catalog-services'
+    static_configs:
+      - targets: ['catalog-api:3000', 'catalog-agent:3001']
