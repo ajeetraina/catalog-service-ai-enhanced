@@ -1,5 +1,8 @@
 # AI-Powered Catalog Management System
 
+<img width="1051" height="726" alt="image" src="https://github.com/user-attachments/assets/50f8a67c-7ce5-4f07-8df7-70fda2e021f7" />
+
+
 AI-powered catalog management system with intelligent agents for product evaluation, market research, and inventory optimization. 
 This repo helps you learn how Agentic AI can shorten the process of creating and managing Product catalog.
 
