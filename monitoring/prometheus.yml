@@ -4,18 +4,26 @@ global:
 scrape_configs:
   - job_name: 'mcp-gateway'
     static_configs:
-      - targets: ['mcp-gateway:9090']
-        
+      - targets: ['mcp-gateway:8811']
+    metrics_path: /metrics
+    scrape_interval: 10s
+
   - job_name: 'security-interceptor'
     static_configs:
       - targets: ['security-interceptor:8080']
     metrics_path: /metrics
-    
+
   - job_name: 'audit-interceptor'
     static_configs:
-      - targets: ['audit-interceptor:8081']
+      - targets: ['audit-interceptor:8080']
     metrics_path: /metrics
-    
-  - job_name: 'catalog-services'
+
+  - job_name: 'agent-service'
     static_configs:
-      - targets: ['catalog-api:3000', 'catalog-agent:3001']
+      - targets: ['agent-service:7777']
+    metrics_path: /metrics
+
+  - job_name: 'backend'
+    static_configs:
+      - targets: ['backend:3000']
+    metrics_path: /metrics

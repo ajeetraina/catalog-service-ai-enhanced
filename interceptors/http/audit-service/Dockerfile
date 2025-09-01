@@ -14,7 +14,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY app.py .
-COPY config/ ./config/ || true
 
 # Create log directory
 RUN mkdir -p /var/log/mcp
