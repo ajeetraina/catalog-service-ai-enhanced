@@ -2,8 +2,6 @@
 
 AI-powered catalog management system with intelligent agents for product evaluation, market research, and inventory optimization.
 
-<img width="1007" height="941" alt="image" src="https://github.com/user-attachments/assets/1337bbdf-414c-40d6-9350-4a2e4f13dc34" />
-
 
 ## Features
 
