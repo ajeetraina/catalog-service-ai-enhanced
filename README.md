@@ -1,7 +1,20 @@
-# AI-Powered Catalog Management System
+# AI-Powered Multi-Agent Catalog Management System
 
 AI-powered catalog management system with intelligent agents for product evaluation, market research, and inventory optimization. 
+This is a multi-agent microservices architecture that uses AI to automatically evaluate product submissions.
+
 This repo helps you learn how Agentic AI can shorten the process of creating and managing Product catalog.
+
+Core Components:
+
+- Frontend (React) - Product submission interface
+- Backend API - Node.js REST API
+- Agent Service - Core AI evaluation engine
+- Agent Portal - Admin interface for agent management
+- MCP Gateway - Tool orchestration layer
+- Docker Model Runner - Local LLM execution
+- Databases: PostgreSQL (catalog) + MongoDB (agent history)
+- Kafka - Event streaming (KRaft mode)
 
 
 ## Features
@@ -59,12 +72,72 @@ The system uses a microservices architecture with:
 - PostgreSQL for catalog data
 - MongoDB for agent history
 
-## AI Agents
+## How the AI Evaluation Works
 
-1. **Vendor Intake**: Evaluates submissions (0-100 score)
-2. **Market Research**: Searches competitor data
-3. **Customer Match**: Analyzes preferences
-4. **Catalog Management**: Updates product catalog
+### 1. The Four AI Agents:
+
+```
+const agents = {
+  vendorIntake: {
+    name: 'Vendor Intake Agent',
+    role: 'Evaluates vendor submissions using Docker Model Runner',
+    threshold: 70,  // Your rejection threshold
+    model: 'ai/llama3.2:latest'
+  },
+  marketResearch: { /* Competitor analysis */ },
+  customerMatch: { /* Customer preference matching */ },
+  catalog: { /* Catalog management */ }
+}
+```
+
+### 2. Evaluation Process Flow:
+
+When you submit a product, here's exactly what happens:
+
+Frontend → Backend → Agent Service (/products/evaluate)
+AI Prompt Generation:
+
+```
+const evaluationPrompt = `You are an expert product evaluator...
+
+Product Details:
+- Vendor: ${product.vendorName}
+- Product Name: ${product.productName}  
+- Description: ${product.description}
+- Price: $${product.price}
+- Category: ${product.category}
+
+Evaluation Criteria (100 points total):
+- Product innovation and quality (25 points)
+- Market demand and competitiveness (25 points)  
+- Description clarity and completeness (20 points)
+- Price appropriateness (15 points)
+- Vendor credibility (15 points)
+
+Minimum passing score: 70/100`
+```
+
+### 3 Docker Model Runner Call:
+
+- Uses Llama 3.2 model locally
+- Endpoint: http://model-runner.docker.internal/engines/v1/chat/completions
+- 60-second timeout for processing
+
+
+### 4. Response Processing
+
+```
+{
+  "score": 87,           // Your NVIDIA example got 87/100
+  "decision": "APPROVED", // Because 87 > 70 threshold
+  "reasoning": "Detailed AI analysis...",
+  "category_match": "Electronics - Perfect match",
+  "market_potential": "High"
+}
+```
+
+
+
 
 ## Submit a Product
 
