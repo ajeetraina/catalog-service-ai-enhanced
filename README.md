@@ -136,8 +136,24 @@ Minimum passing score: 70/100`
 }
 ```
 
+### 5. Configuration & Thresholds:
 
+- Passing Score: 70/100 (configurable via VENDOR_EVALUATION_THRESHOLD)
+- AI Model: Llama 3.2 (local via Docker Model Runner)
+- Processing Timeout: 60 seconds
+- Scoring Breakdown:
+  - Innovation: 25 pts
+  - Market demand: 25 pts
+  - Description clarity: 20 pts
+  - Pricing: 15 pts
+  - Vendor credibility: 15 pts
 
+### 6. 🔄 Data Flow & Storage:
+
+- Evaluation Results → MongoDB (agent_history database)
+- Approved Products → PostgreSQL (catalog_db)
+- Event Stream → Kafka (product-evaluations topic)
+- Admin Monitoring → Agent Portal UI
 
 ## Submit a Product
 
