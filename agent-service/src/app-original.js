@@ -13,148 +13,19 @@ const PORT = process.env.PORT || 7777;
 app.use(cors());
 app.use(express.json());
 
-// ========== SECURITY INTERCEPTOR (WORKING VERSION) ==========
-const MALICIOUS_PATTERNS = [
-  /drop\s+table/i,
-  /union\s+select/i,
-  /';?\s*drop/i,
-  /';?\s*delete/i,
-  /';?\s*insert/i,
-  /';?\s*update/i,
-  /';?\s*--/i,
-  /<script[^>]*>/i,
-  /javascript:/i,
-  /eval\s*\(/i,
-  /exec\s*\(/i,
-  /xp_cmdshell/i
-];
-
-// Rate limiting store
-const rateLimitStore = new Map();
-
-function securityInterceptor(req, res, next) {
-  const startTime = Date.now();
-  
-  try {
-    console.log('🔍 SECURITY INTERCEPTOR: Checking request...');
-    
-    const { description = '', productName = '', vendorName = '', category = '' } = req.body;
-    const content = `${description} ${productName} ${vendorName} ${category}`.toLowerCase();
-    
-    console.log('📝 Content being checked:', content.substring(0, 100) + '...');
-    
-    // Check for malicious patterns
-    let riskScore = 0;
-    let blockedReasons = [];
-    
-    for (let pattern of MALICIOUS_PATTERNS) {
-      if (pattern.test(content)) {
-        riskScore += 0.8;
-        blockedReasons.push(`Malicious pattern detected: ${pattern.source}`);
-        console.log(`🚨 PATTERN MATCH: ${pattern.source} in content`);
-      }
-    }
-    
-    // Rate limiting check
-    const clientId = req.ip || 'anonymous';
-    const now = Date.now();
-    const windowStart = now - 60000; // 1 minute window
-    
-    if (!rateLimitStore.has(clientId)) {
-      rateLimitStore.set(clientId, []);
-    }
-    
-    const requests = rateLimitStore.get(clientId);
-    const validRequests = requests.filter(time => time > windowStart);
-    
-    if (validRequests.length >= 60) {
-      console.log('🚫 RATE LIMIT EXCEEDED:', clientId);
-      return res.status(429).json({
-        success: false,
-        error: 'Rate limit exceeded',
-        details: {
-          limit: 60,
-          window: '60 seconds',
-          current_count: validRequests.length,
-          retry_after: 60
-        }
-      });
-    }
-    
-    validRequests.push(now);
-    rateLimitStore.set(clientId, validRequests);
-    
-    // Security decision
-    const threshold = 0.5; // Lower threshold for better detection
-    
-    if (riskScore >= threshold || blockedReasons.length > 0) {
-      const processingTime = Date.now() - startTime;
-      
-      console.log('🚫 REQUEST BLOCKED:');
-      console.log(`   Risk Score: ${riskScore}`);
-      console.log(`   Reasons: ${blockedReasons.join(', ')}`);
-      console.log(`   Processing Time: ${processingTime}ms`);
-      
-      return res.status(403).json({
-        success: false,
-        error: 'Request blocked by security interceptor',
-        details: {
-          risk_score: riskScore,
-          blocked_reasons: blockedReasons,
-          message: 'Potentially malicious content detected',
-          threshold: threshold
-        },
-        metadata: {
-          timestamp: new Date().toISOString(),
-          session_id: clientId,
-          processing_time_ms: processingTime,
-          intercepted_by: 'agent-security-interceptor',
-          intercepted: true
-        }
-      });
-    }
-    
-    console.log(`✅ SECURITY CHECK PASSED: Risk score ${riskScore}, ${validRequests.length}/60 requests`);
-    
-    // Add security metadata to request
-    req.security = {
-      validated: true,
-      risk_score: riskScore,
-      session_id: clientId,
-      processing_time_ms: Date.now() - startTime
-    };
-    
-    next();
-    
-  } catch (error) {
-    console.error('❌ Security interceptor error:', error);
-    
-    // Fail secure - block request on error
-    return res.status(503).json({
-      success: false,
-      error: 'Security validation failed',
-      details: {
-        message: 'Security service error',
-        error: error.message
-      }
-    });
-  }
-}
-// ========== END SECURITY INTERCEPTOR ==========
-
 // MongoDB connection
 const mongoClient = new MongoClient(
   process.env.MONGODB_URL || 'mongodb://admin:admin@mongodb:27017/agent_history?authSource=admin'
 );
 
 // Docker Model Runner configuration
+// Docker Compose sets this via the models configuration
 const modelRunnerUrl = process.env.MODEL_RUNNER_URL || 'http://model-runner.docker.internal';
 const defaultModel = process.env.MODEL_RUNNER_MODEL || process.env.AI_DEFAULT_MODEL || 'ai/llama3.2:latest';
 
 console.log('🤖 Agent Service Configuration:');
 console.log(`   Model Runner URL: ${modelRunnerUrl}`);
 console.log(`   Default Model: ${defaultModel}`);
-console.log('🛡️  Security Interceptor: ENABLED (Built-in)');
 
 // Kafka setup
 const kafka = new Kafka({
@@ -200,13 +71,17 @@ const agents = {
 // Call Docker Model Runner with proper URL handling
 async function callModel(messages) {
   try {
+    // Construct the proper API URL
     let apiUrl;
     
+    // Handle different URL formats that Docker might provide
     if (modelRunnerUrl.includes('/engines/v1')) {
+      // URL already includes the engines path, just add chat/completions
       apiUrl = modelRunnerUrl.endsWith('/') 
         ? `${modelRunnerUrl}chat/completions`
         : `${modelRunnerUrl}/chat/completions`;
     } else {
+      // Base URL only, add the full path
       apiUrl = modelRunnerUrl.endsWith('/') 
         ? `${modelRunnerUrl}engines/v1/chat/completions`
         : `${modelRunnerUrl}/engines/v1/chat/completions`;
@@ -226,7 +101,7 @@ async function callModel(messages) {
         stream: false
       },
       {
-        timeout: 60000,
+        timeout: 60000, // 60 second timeout for AI processing
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json'
@@ -243,7 +118,10 @@ async function callModel(messages) {
     console.error('❌ Docker Model Runner error:');
     console.error('   Status:', error.response?.status || 'No status');
     console.error('   Message:', error.message);
+    console.error('   URL:', error.config?.url);
+    console.error('   Response:', error.response?.data);
     
+    // Provide better error messages
     if (error.response?.status === 404) {
       throw new Error(`Model Runner API endpoint not found. Attempted URL: ${error.config?.url}`);
     } else if (error.code === 'ECONNREFUSED') {
@@ -261,19 +139,23 @@ function parseEvaluation(aiResponse, product) {
   let evaluation;
   
   try {
+    // Extract content from OpenAI format response
     const content = aiResponse.choices?.[0]?.message?.content || aiResponse.content || aiResponse;
     
     if (!content) {
       throw new Error('Empty response from AI model');
     }
     
+    // Try to parse as JSON first
     try {
       evaluation = JSON.parse(content);
     } catch (parseError) {
+      // If not JSON, try to extract structured data from text
       console.log('⚠️ AI response not JSON, parsing as text...');
       evaluation = parseTextResponse(content);
     }
     
+    // Validate required fields
     if (typeof evaluation.score !== 'number' || !evaluation.decision) {
       throw new Error('Invalid evaluation format from AI');
     }
@@ -281,7 +163,8 @@ function parseEvaluation(aiResponse, product) {
   } catch (error) {
     console.warn('⚠️ AI response parsing failed, using fallback evaluation:', error.message);
     
-    const score = Math.floor(Math.random() * 20) + 75;
+    // Fallback: Generate a reasonable evaluation
+    const score = Math.floor(Math.random() * 20) + 75; // 75-95 range
     evaluation = {
       score: score,
       decision: score >= VENDOR_EVALUATION_THRESHOLD ? 'APPROVED' : 'REJECTED',
@@ -292,12 +175,14 @@ function parseEvaluation(aiResponse, product) {
     };
   }
   
+  // Ensure score is valid
   evaluation.score = Math.min(100, Math.max(0, evaluation.score));
   evaluation.threshold = VENDOR_EVALUATION_THRESHOLD;
   
   return evaluation;
 }
 
+// Helper function to parse text responses into structured data
 function parseTextResponse(text) {
   const scoreMatch = text.match(/score[:\s]*(\d+)/i);
   const score = scoreMatch ? parseInt(scoreMatch[1]) : Math.floor(Math.random() * 20) + 75;
@@ -312,19 +197,14 @@ function parseTextResponse(text) {
   };
 }
 
-// Routes with security interceptor
+// Routes
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'healthy',
     timestamp: new Date().toISOString(),
     model_runner_url: modelRunnerUrl,
     model: defaultModel,
-    threshold: VENDOR_EVALUATION_THRESHOLD,
-    security: {
-      interceptor: 'enabled',
-      patterns: MALICIOUS_PATTERNS.length,
-      rate_limit: '60/minute'
-    }
+    threshold: VENDOR_EVALUATION_THRESHOLD
   });
 });
 
@@ -332,14 +212,14 @@ app.get('/agents', (req, res) => {
   res.json(agents);
 });
 
-// PROTECTED ROUTE: Product evaluation with security interceptor
-app.post('/products/evaluate', securityInterceptor, async (req, res) => {
+app.post('/products/evaluate', async (req, res) => {
   const startTime = Date.now();
-  console.log('\n📝 New product evaluation request (SECURITY PROTECTED):', JSON.stringify(req.body, null, 2));
+  console.log('\n📝 New product evaluation request:', JSON.stringify(req.body, null, 2));
   
   try {
     const product = req.body;
     
+    // Validate required fields
     if (!product.productName || !product.description) {
       return res.status(400).json({
         success: false,
@@ -347,6 +227,7 @@ app.post('/products/evaluate', securityInterceptor, async (req, res) => {
       });
     }
     
+    // Create comprehensive evaluation prompt
     const evaluationPrompt = `You are an expert product evaluator for an AI-enhanced e-commerce catalog service.
 
 Evaluate this product submission and respond with a JSON object in exactly this format:
@@ -388,18 +269,19 @@ Important: Respond ONLY with the JSON object, no additional text before or after
       }
     ];
     
+    // Call Docker Model Runner
     const aiResponse = await callModel(messages);
+    
+    // Parse and validate evaluation
     const evaluation = parseEvaluation(aiResponse, product);
     evaluation.processing_time_ms = Date.now() - startTime;
-    evaluation.security = req.security;
     
-    console.log(`🎯 AI Evaluation Result (SECURITY PROTECTED):`);
+    console.log(`🎯 AI Evaluation Result:`);
     console.log(`   Score: ${evaluation.score}/100`);
     console.log(`   Decision: ${evaluation.decision}`);
-    console.log(`   Security Risk: ${req.security?.risk_score || 0}`);
     console.log(`   Processing Time: ${evaluation.processing_time_ms}ms`);
     
-    // Store in MongoDB
+    // Store in MongoDB (optional)
     try {
       await mongoClient.connect();
       const db = mongoClient.db('agent_history');
@@ -408,15 +290,14 @@ Important: Respond ONLY with the JSON object, no additional text before or after
         evaluation,
         raw_ai_response: aiResponse,
         timestamp: new Date(),
-        agent_version: '2.0-with-security-interceptor',
-        security: req.security
+        agent_version: '2.0-docker-runner'
       });
       console.log('💾 Evaluation stored in MongoDB');
     } catch (dbError) {
       console.warn('⚠️ MongoDB storage failed (continuing):', dbError.message);
     }
     
-    // Publish to Kafka
+    // Publish to Kafka (optional)
     try {
       if (producer) {
         await producer.send({
@@ -426,8 +307,7 @@ Important: Respond ONLY with the JSON object, no additional text before or after
             value: JSON.stringify({
               product,
               evaluation,
-              timestamp: new Date().toISOString(),
-              security_protected: true
+              timestamp: new Date().toISOString()
             })
           }]
         });
@@ -443,25 +323,24 @@ Important: Respond ONLY with the JSON object, no additional text before or after
       evaluation,
       metadata: {
         processing_time_ms: evaluation.processing_time_ms,
-        agent: 'agent-service-with-security-interceptor-v2.0',
+        agent: 'docker-model-runner-v2.0',
         model: defaultModel,
         endpoint: modelRunnerUrl,
-        timestamp: new Date().toISOString(),
-        security_protected: true,
-        security: req.security
+        timestamp: new Date().toISOString()
       }
     });
     
   } catch (error) {
     console.error('❌ Evaluation failed:', error);
     
+    // Return error with fallback evaluation
     const processingTime = Date.now() - startTime;
     
     res.status(500).json({
       success: false,
       error: error.message,
       fallback_evaluation: {
-        score: 75,
+        score: 75, // Safe default
         decision: 'APPROVED',
         reasoning: 'Automatic approval due to AI service error - manual review recommended',
         category_match: 'Unable to assess due to system error',
@@ -473,16 +352,16 @@ Important: Respond ONLY with the JSON object, no additional text before or after
       metadata: {
         error_occurred: true,
         timestamp: new Date().toISOString(),
-        suggested_action: 'Check Docker Model Runner service and try again',
-        security_protected: true
+        suggested_action: 'Check Docker Model Runner service and try again'
       }
     });
   }
 });
 
-// Test endpoints
+// Test endpoint for debugging Model Runner connectivity
 app.get('/test-model-runner', async (req, res) => {
   try {
+    // Construct health check URL
     let healthUrl;
     if (modelRunnerUrl.includes('/engines/v1')) {
       healthUrl = modelRunnerUrl.replace('/engines/v1', '/health');
@@ -519,6 +398,7 @@ app.get('/test-model-runner', async (req, res) => {
   }
 });
 
+// Test evaluation endpoint with sample data
 app.post('/test-evaluation', (req, res) => {
   const testProduct = {
     vendorName: 'TestCorp',
@@ -538,8 +418,28 @@ app.post('/test-evaluation', (req, res) => {
 // Graceful startup
 async function start() {
   try {
-    console.log('\n🚀 Starting Agent Service WITH BUILT-IN SECURITY INTERCEPTOR...');
+    console.log('\n🚀 Starting Docker Model Runner Agent Service...');
     
+    // Test Model Runner connectivity
+    try {
+      let healthUrl;
+      if (modelRunnerUrl.includes('/engines/v1')) {
+        healthUrl = modelRunnerUrl.replace('/engines/v1', '/health');
+      } else {
+        healthUrl = `${modelRunnerUrl}/health`;
+      }
+      
+      const testResponse = await axios.get(healthUrl, { timeout: 10000 });
+      console.log('✅ Docker Model Runner connection verified');
+      console.log('   Health response:', testResponse.data);
+    } catch (error) {
+      console.error('⚠️ Warning: Cannot connect to Docker Model Runner');
+      console.error('   Error:', error.message);
+      console.error('   URL:', modelRunnerUrl);
+      console.error('🔧 Make sure Docker Desktop Model Runner is enabled');
+    }
+    
+    // Connect to MongoDB (optional)
     try {
       await mongoClient.connect();
       console.log('✅ MongoDB connected');
@@ -547,6 +447,7 @@ async function start() {
       console.warn('⚠️ MongoDB connection failed (continuing without it):', error.message);
     }
     
+    // Connect to Kafka (optional)
     try {
       if (producer) {
         await producer.connect();
@@ -556,15 +457,14 @@ async function start() {
       console.warn('⚠️ Kafka connection failed (continuing without it):', error.message);
     }
     
+    // Start server
     app.listen(PORT, () => {
       console.log('\n' + '='.repeat(80));
-      console.log(`🛡️  Agent Service WITH SECURITY INTERCEPTOR READY`);
+      console.log(`🤖 Docker Model Runner Agent Service READY`);
       console.log(`🌐 Server: http://localhost:${PORT}`);
       console.log(`🧠 AI Model: ${defaultModel}`);
       console.log(`🔗 Model Runner: ${modelRunnerUrl}`);
       console.log(`📊 Evaluation threshold: ${VENDOR_EVALUATION_THRESHOLD}/100`);
-      console.log(`🛡️  Security: ENABLED (${MALICIOUS_PATTERNS.length} patterns)`);
-      console.log(`⚡ Rate Limiting: 60 requests/minute per IP`);
       console.log(`🔧 Test endpoint: GET http://localhost:${PORT}/test-model-runner`);
       console.log(`🎯 Evaluation endpoint: POST http://localhost:${PORT}/products/evaluate`);
       console.log('='.repeat(80));
@@ -576,6 +476,7 @@ async function start() {
   }
 }
 
+// Graceful shutdown
 process.on('SIGINT', async () => {
   console.log('\n🛑 Shutting down Agent Service...');
   
@@ -590,6 +491,7 @@ process.on('SIGINT', async () => {
   process.exit(0);
 });
 
+// Handle uncaught errors
 process.on('uncaughtException', (error) => {
   console.error('💥 Uncaught Exception:', error);
   process.exit(1);

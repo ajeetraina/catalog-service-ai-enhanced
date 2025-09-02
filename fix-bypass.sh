@@ -1,3 +1,23 @@
+#!/bin/bash
+set -euo pipefail
+
+echo "🛡️ Applying WORKING security patch to agent service..."
+echo "===================================================="
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+# Create backup
+BACKUP_FILE="agent-service/src/app-backup-$(date +%Y%m%d-%H%M%S).js"
+cp agent-service/src/app.js "$BACKUP_FILE"
+echo -e "${BLUE}📁 Backup created: $BACKUP_FILE${NC}"
+
+# Create the security-patched app.js
+cat > agent-service/src/app.js << 'EOF'
 import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
@@ -601,3 +621,74 @@ process.on('unhandledRejection', (error) => {
 });
 
 start().catch(console.error);
+EOF
+
+echo -e "${GREEN}✅ Security-patched app.js created${NC}"
+
+# Restart agent service
+echo -e "${YELLOW}🔄 Restarting agent service with security patch...${NC}"
+docker compose -f docker-compose.interceptors.yml restart agent-service
+
+echo -e "${BLUE}⏳ Waiting for agent service to restart...${NC}"
+sleep 15
+
+# Test the security
+echo -e "${GREEN}🧪 Testing security interceptor...${NC}"
+
+echo ""
+echo "Testing malicious SQL injection (should be BLOCKED):"
+MALICIOUS_RESULT=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST http://localhost:7777/products/evaluate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "vendorName": "Evil Corp",
+    "productName": "Evil Product", 
+    "description": "Contact us for product'"'"'; DROP TABLE products; -- with special pricing",
+    "price": "99.99",
+    "category": "Hacking"
+  }' 2>/dev/null)
+
+echo "$MALICIOUS_RESULT"
+
+if echo "$MALICIOUS_RESULT" | grep -q "blocked by security interceptor"; then
+    echo -e "${GREEN}🎉 SUCCESS! Malicious request was BLOCKED by security interceptor!${NC}"
+elif echo "$MALICIOUS_RESULT" | grep -q "HTTP_STATUS:403"; then
+    echo -e "${GREEN}🎉 SUCCESS! Request blocked with 403 status!${NC}"  
+else
+    echo -e "${RED}❌ Security interceptor may not be working${NC}"
+fi
+
+echo ""
+echo "Testing legitimate request (should PASS):"
+LEGIT_RESULT=$(curl -s -X POST http://localhost:7777/products/evaluate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "vendorName": "NVIDIA",
+    "productName": "Jetson Nano",
+    "description": "AI development board for edge computing applications",
+    "price": "249.99", 
+    "category": "Electronics"
+  }' 2>/dev/null)
+
+echo "$LEGIT_RESULT" | jq . 2>/dev/null || echo "$LEGIT_RESULT"
+
+echo ""
+echo -e "${BLUE}=================================================="
+echo "🎉 SECURITY INTERCEPTOR FIX COMPLETE!"
+echo "=================================================="
+echo ""
+echo "What changed:"
+echo "• ✅ Built-in security patterns that ACTUALLY WORK"
+echo "• ✅ Rate limiting (60 requests/minute per IP)"  
+echo "• ✅ Real-time pattern detection"
+echo "• ✅ 403 responses for malicious content"
+echo ""
+echo "🌐 Test your UI now: http://localhost:5173"
+echo "🔍 Try your SQL injection - it should be BLOCKED!"
+echo ""
+echo "Monitor logs:"
+echo "• docker logs -f catalog-agent-service"
+echo ""
+echo "Rollback if needed:"
+echo "• cp $BACKUP_FILE agent-service/src/app.js"
+echo "• docker compose -f docker-compose.interceptors.yml restart agent-service"
+echo -e "${NC}"

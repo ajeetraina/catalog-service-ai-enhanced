@@ -38,27 +38,8 @@ services:
     ports:
       - "5173:5173"
     environment:
-      - KAFKA_BROKERS=kafka:29092
-      - KAFKA_CLIENT_ID=agent-service
-      - KAFKA_GROUP_ID=agent-service-group
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=catalog_db
-      - MONGODB_URL=mongodb://admin:admin@mongodb:27017/agent_history?authSource=admin
-      - AI_DEFAULT_MODEL=ai/llama3.2:latest
-      - MCP_GATEWAY_URL=http://mcp-gateway:8811
-      - VENDOR_EVALUATION_THRESHOLD=70
-      - MARKET_RESEARCH_ENABLED=true
-      - CUSTOMER_MATCHING_ENABLED=true
-      - MCP_SECURITY_ENABLED=true
-      - MCP_AUDIT_ENABLED=true
-      - SECURITY_SERVICE_URL=http://security-interceptor:8080
-      - AUDIT_SERVICE_URL=http://audit-interceptor:8080
-      - SECURITY_MODE=strict
-      - RATE_LIMIT_RPM=60
-    
+      - API_URL=http://localhost:3000
+      - AGENT_PORTAL_URL=http://localhost:3001
     networks:
       - catalog-network
     depends_on:
@@ -113,11 +94,6 @@ services:
       - CUSTOMER_MATCHING_ENABLED=true
       - MCP_SECURITY_ENABLED=true
       - MCP_AUDIT_ENABLED=true
-      - SECURITY_SERVICE_URL=http://security-interceptor:8080
-      - AUDIT_SERVICE_URL=http://audit-interceptor:8080
-      - SECURITY_MODE=strict
-      - RATE_LIMIT_RPM=60
-    
     networks:
       - catalog-network
     depends_on:

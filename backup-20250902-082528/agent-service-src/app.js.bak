@@ -1,0 +1,141 @@
+import express from 'express';
+import cors from 'cors';
+import axios from 'axios';
+import { MongoClient } from 'mongodb';
+import { Kafka } from 'kafkajs';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const app = express();
+const PORT = process.env.PORT || 7777;
+
+app.use(cors());
+app.use(express.json());
+
+// MongoDB connection
+const mongoClient = new MongoClient(
+  process.env.MONGODB_URL || 'mongodb://admin:admin@mongodb:27017'
+);
+
+// Model Runner client
+const modelRunnerUrl = process.env.MODEL_RUNNER_URL || 'http://localhost:12434';
+const mcpGatewayUrl = process.env.MCPGATEWAY_URL || 'http://localhost:8811';
+
+// Kafka setup
+const kafka = new Kafka({
+  clientId: 'agent-service',
+  brokers: (process.env.KAFKA_BROKERS || 'localhost:9092').split(','),
+});
+
+const producer = kafka.producer();
+
+// Agent definitions
+const agents = {
+  vendorIntake: {
+    name: 'Vendor Intake Agent',
+    role: 'Evaluates vendor submissions'
+  },
+  marketResearch: {
+    name: 'Market Research Agent',
+    role: 'Searches for market data',
+    tools: ['brave_search']
+  },
+  customerMatch: {
+    name: 'Customer Match Agent',
+    role: 'Matches against customer preferences',
+    tools: ['mongodb_query']
+  },
+  catalog: {
+    name: 'Catalog Agent',
+    role: 'Manages catalog entries',
+    tools: ['postgres_query']
+  }
+};
+
+// Call Model Runner
+async function callModel(messages) {
+  try {
+    const response = await axios.post(
+      `${modelRunnerUrl}chat/completions`,
+      {
+        model: 'ai/llama3.2:latest',
+        messages: messages,
+        temperature: 0.7,
+        max_tokens: 2048
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Model Runner error:', error);
+    throw error;
+  }
+}
+
+// Routes
+app.get('/health', (req, res) => {
+  res.json({ status: 'healthy' });
+});
+
+app.get('/agents', (req, res) => {
+  res.json(agents);
+});
+
+app.post('/products/evaluate', async (req, res) => {
+  try {
+    const product = req.body;
+    
+    // Step 1: Vendor Intake
+    const intakeMessages = [
+      {
+        role: 'system',
+        content: 'You are evaluating a product submission. Score it 0-100 and provide decision.'
+      },
+      {
+        role: 'user',
+        content: JSON.stringify(product)
+      }
+    ];
+    
+    const intakeResult = await callModel(intakeMessages);
+    const evaluation = JSON.parse(intakeResult.choices[0].message.content);
+    
+    // Store in MongoDB
+    const db = mongoClient.db('agent_history');
+    await db.collection('evaluations').insertOne({
+      product,
+      evaluation,
+      timestamp: new Date()
+    });
+    
+    // Publish to Kafka
+    await producer.send({
+      topic: 'product-evaluations',
+      messages: [
+        { 
+          key: product.id || 'new',
+          value: JSON.stringify(evaluation)
+        }
+      ]
+    });
+    
+    res.json({
+      success: true,
+      evaluation
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Start server
+async function start() {
+  await mongoClient.connect();
+  await producer.connect();
+  
+  app.listen(PORT, () => {
+    console.log(`Agent Service running on port ${PORT}`);
+  });
+}
+
+start().catch(console.error);
