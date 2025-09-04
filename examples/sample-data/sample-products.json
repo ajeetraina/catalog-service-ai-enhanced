@@ -1,0 +1,30 @@
+[
+  {
+    "vendorName": "NVIDIA",
+    "productName": "Jetson Nano Developer Kit",
+    "description": "NVIDIA Jetson Nano Developer Kit is a small, powerful computer that lets you run multiple neural networks in parallel for applications like image classification, object detection, segmentation, and speech processing.",
+    "price": 199.0,
+    "category": "Electronics"
+  },
+  {
+    "vendorName": "Raspberry Pi Foundation",
+    "productName": "Raspberry Pi 5 8GB",
+    "description": "The latest Raspberry Pi 5 with 8GB RAM, featuring a quad-core ARM Cortex-A76 processor, dual 4K display support, and improved connectivity options for makers and developers.",
+    "price": 80.0,
+    "category": "Electronics"
+  },
+  {
+    "vendorName": "Arduino",
+    "productName": "Arduino Uno R4 WiFi",
+    "description": "The Arduino Uno R4 WiFi combines the classic Arduino Uno R3 form factor with enhanced features including built-in WiFi connectivity, increased memory, and improved processing power.",
+    "price": 27.50,
+    "category": "Electronics"
+  },
+  {
+    "vendorName": "OpenAI",
+    "productName": "ChatGPT Plus Subscription",
+    "description": "Premium subscription to ChatGPT with faster response times, priority access during peak usage, and access to new features and improvements.",
+    "price": 20.0,
+    "category": "Software"
+  }
+]
