@@ -1,5 +1,8 @@
 # AI-Powered Multi-Agent Catalog Management System
 
+
+<img width="1014" height="724" alt="image" src="https://github.com/user-attachments/assets/666caf5e-896e-4505-8294-91ca98e5d898" />
+
 AI-powered catalog management system with intelligent agents for product evaluation, market research, and inventory optimization. 
 This is a multi-agent microservices architecture that uses AI to automatically evaluate product submissions.
 
